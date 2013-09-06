@@ -1,0 +1,938 @@
+
+import freemarker.cache.StringTemplateLoader;
+import freemarker.template.Template;
+import freemarker.template.TemplateException;
+
+import freemarker.template.Configuration;
+
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.StringWriter;
+import java.io.Writer;
+
+import java.io.File;
+
+import java.util.HashMap;
+
+import java.util.Map;
+
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.xml.sax.SAXException;
+
+import xyz.XMLToMapWithXPath;
+
+
+
+public class Example3
+
+{
+	static Configuration cfg = new Configuration();
+
+	public static void main(String[] args) throws ParserConfigurationException, SAXException, IOException
+
+	{
+
+//		Map tree = new HashMap();
+
+		
+		//Map tree = MapTest.searchmap();
+	     
+	    	XMLToMapWithXPath a=new XMLToMapWithXPath();
+	    	//Map tree = a.convertXMLTOMAP();
+	    	Map tree=new HashMap();
+	//	File document = new File("src/XML.xml");
+
+
+
+		// Read the XML file and process the template using FreeMarker
+
+		try {
+			
+			
+
+		//	tree.put("doc", freemarker.ext.dom.NodeModel.parse(document));
+
+			System.out.println(tree);
+			
+			String template="<FindByBVDIdResponse xmlns=\"http://bvdep.com/webservices/\"><FindByBVDIdResult><Token>${FindByBVDIdResponse_FindByBVDIdResult_Token!''}</Token><SelectionCount>${FindByBVDIdResponse_FindByBVDIdResult_SelectionCount!''}</SelectionCount></FindByBVDIdResult></FindByBVDIdResponse>";
+			
+			
+			freemarkerDo(tree, template);
+
+		}
+
+		catch(Exception e) {
+            e.printStackTrace();
+			System.out.println(e.getLocalizedMessage());
+
+		}
+
+	}
+
+
+
+	// Process a template using FreeMarker and print the results
+
+	static void freemarkerDo(Map datamodel, String template)
+
+	{
+			
+		   StringTemplateLoader stringLoader = new StringTemplateLoader();
+		   stringLoader.putTemplate("searchTemplate", template);
+		   //stringLoader.putTemplate("myTemplate", "<#include \"greetTemplate\"><@greet/> World!");
+		 
+		//Then you tell your Configuration object to use it:
+		   cfg.setTemplateLoader(stringLoader);
+		
+
+	
+		   Template tpl=null;
+		try {
+			tpl = cfg.getTemplate("searchTemplate");
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		//Template tpl = cfg.getTemplate(template);
+
+		OutputStreamWriter output = new OutputStreamWriter(System.out);
+
+		
+		Writer writer = new StringWriter();
+
+
+		try {
+			//tpl.process(datamodel, output);
+			tpl.process(datamodel, writer);
+			System.out.println(writer.toString());
+		} catch (TemplateException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+
+}
+
+
+
+package xyz;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.Stack;
+import java.util.TreeSet;
+
+import javax.xml.parsers.*;
+
+import org.apache.commons.lang.StringUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.*;
+import org.xml.sax.helpers.DefaultHandler;
+
+import com.sun.org.apache.xpath.internal.XPathAPI;
+
+/**
+ * SAX handler that creates and prints XPath expressions for each element encountered.
+ *
+ * The algorithm is not infallible, if elements appear on different levels in the hierarchy.
+ * Something like the following is an example:
+ * - <elemA/>
+ * - <elemA/>
+ * - <elemB/>
+ * - <elemA/>
+ * - <elemC>
+ * -     <elemB/>
+ * - </elemC>
+ *
+ * will report
+ *
+ * //elemA[0]
+ * //elemA[1]
+ * //elemB[0]
+ * //elemA[2]
+ * //elemC[0]
+ * //elemC[0]/elemB[1]       (this is wrong: should be //elemC[0]/elemB[0] )
+ *
+ * It also ignores namespaces, and thus treats <foo:elemA> the same as <bar:elemA>.
+ */
+
+public class SAXCreateXPath extends DefaultHandler {
+
+    // map of all encountered tags and their running count
+    private Map<String, Integer> tagCount;
+    // keep track of the succession of elements
+    private Stack<String> tags;
+    private static List<String> xpathArray=new ArrayList<String>();
+    private static Set<String> listofxpath=new HashSet<String>();
+    // set to the tag name of the recently closed tag
+    String lastClosedTag;
+
+    /**
+     * Construct the XPath expression
+     */
+    private String getCurrentXPath() {
+        String str = "//";
+        boolean first = true;
+        for (String tag : tags) {
+            if (first)
+                str = str + tag;
+            else
+                str = str + "/" + tag;
+            str += "["+tagCount.get(tag)+"]";
+            first = false;
+        }
+        
+        return str;
+    }
+
+    private String getCurrentNamedXPath() {
+        String str = "/";
+        boolean first = true;
+        for (String tag : xpathArray) {
+            if (first)
+                str = str + tag;
+            else
+                str = str + "/" + tag;
+          //  str += "["+tagCount.get(tag)+"]";
+            first = false;
+        }
+        return str;
+    }
+    
+    @Override
+    public void startDocument() throws SAXException {
+        tags = new Stack();
+        //xpathArray= new Stack();
+        tagCount = new HashMap<String, Integer>();
+    }
+
+    @Override
+    public void startElement (String namespaceURI, String localName, String qName, Attributes atts)
+        throws SAXException
+    {
+        boolean isRepeatElement = false;
+   
+
+        if (tagCount.get(localName) == null) {
+            tagCount.put(localName, 0);
+        } else {
+            tagCount.put(localName, 1 + tagCount.get(localName));
+        }
+
+        if (lastClosedTag != null) {
+            // an element was recently closed ...
+            if (lastClosedTag.equals(localName)) {
+                // ... and it's the same as the current one
+                isRepeatElement = true;
+                
+               
+            } else {
+                // ... but it's different from the current one, so discard it
+                tags.pop();
+                
+            }
+        }
+
+        // if it's not the same element, add the new element and zero count to list
+        if (! isRepeatElement) {
+        	
+            tags.push(localName);
+            
+          
+        }
+        
+        if(localName.equalsIgnoreCase("element"))
+    	{
+         
+    		for(int i=0;i<atts.getLength();i++){
+    			if(atts.getLocalName(i).equalsIgnoreCase("name"))
+    			{
+    				String nodename=atts.getValue(i);
+    				//if(!xpathArray.contains(nodename))
+    					xpathArray.add(nodename);
+    			}
+    		}
+    	}
+        
+    
+       
+        lastClosedTag = null;
+    }
+
+    @Override
+    public void endElement (String uri, String localName, String qName) throws SAXException {
+        // if two tags are closed in succession (without an intermediate opening tag),
+        // then the information about the deeper nested one is discarded
+    	boolean popedup=false;
+        if (lastClosedTag != null) {
+            tags.pop();
+           
+        }
+        lastClosedTag = localName;
+      // System.out.println(xpathArray);
+        if(xpathArray.size()>0){
+       StringBuffer sb=new StringBuffer("/");
+	       for(String tagname:xpathArray)
+	       {
+	                 sb.append(tagname).append("/");
+	       }
+	       sb.replace(sb.lastIndexOf("/"),sb.length(), "");
+	      // System.out.println(sb);
+	       listofxpath.add(sb.toString());
+	       if(localName.equalsIgnoreCase("element"))
+	    	       xpathArray.remove(xpathArray.size()-1);
+        }
+    }
+
+    
+    public void characters(char ch[], int start, int length)
+    	    throws SAXException {
+    	    } 
+
+   public List getXSDToXPATH() throws Exception
+   {
+	   
+   	// Create a JAXP SAXParserFactory and configure it
+       SAXParserFactory spf = SAXParserFactory.newInstance();
+        spf.setNamespaceAware(true);
+        spf.setValidating(false);
+        spf.setXIncludeAware(true);
+
+       // Create a JAXP SAXParser
+       SAXParser saxParser = spf.newSAXParser();
+
+       // Get the encapsulated SAX XMLReader
+       XMLReader xmlReader = saxParser.getXMLReader();
+
+       // Set the ContentHandler of the XMLReader
+       xmlReader.setContentHandler(new SAXCreateXPath());
+
+       //FileInputStream fis=new FileInputStream("C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd");
+       
+       //String filename = "C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd";
+       String filename = "C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd";
+       String path = new File(filename).getAbsolutePath();
+       if (File.separatorChar != '/') {
+           path = path.replace(File.separatorChar, '/');
+       }
+       if (!path.startsWith("/")) {
+           path = "/" + path;
+       }
+
+       // Tell the XMLReader to parse the XML document
+       xmlReader.parse("file:"+path);
+       
+       TreeSet ts=new TreeSet(listofxpath);
+       List returnList=new ArrayList();
+       returnList.addAll(ts);
+       return returnList;
+	   
+	   
+   }
+    
+    
+    public static void main (String[] args) throws Exception {
+        
+    	SAXCreateXPath scp=new SAXCreateXPath();
+ 	    System.out.println(scp.getXSDToXPATH());
+ 
+    }
+    
+    
+	public static String getFileContent( FileInputStream fis ) throws IOException {
+	    StringBuilder sb = new StringBuilder();
+	    Reader r = new InputStreamReader(fis, "UTF-8");  //or whatever encoding
+	    int ch = r.read();
+	    while(ch >= 0) {
+	        sb.append((char)ch);
+	        ch = r.read();
+	    }
+	    return sb.toString();
+	}
+	
+	public static Document getDocument(String xmlStr) throws Exception {
+		InputStream is = new ByteArrayInputStream(xmlStr.getBytes());
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		DocumentBuilder docBuilder = factory.newDocumentBuilder();
+
+		// Parse the XML file and build the Document object in RAM
+		Document doc = docBuilder.parse(is);
+
+		// Normalize text representation.
+		// Collapses adjacent text nodes into one node.
+		doc.getDocumentElement().normalize();
+
+		return doc;
+	}
+
+
+}
+
+
+
+package xyz;
+
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Stack;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+
+import org.w3c.dom.Document;
+import org.xml.sax.Attributes;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
+import org.xml.sax.helpers.DefaultHandler;
+
+/**
+ * SAX handler that creates and prints XPath expressions for each element encountered.
+ *
+ * The algorithm is not infallible, if elements appear on different levels in the hierarchy.
+ * Something like the following is an example:
+ * - <elemA/>
+ * - <elemA/>
+ * - <elemB/>
+ * - <elemA/>
+ * - <elemC>
+ * -     <elemB/>
+ * - </elemC>
+ *
+ * will report
+ *
+ * //elemA[0]
+ * //elemA[1]
+ * //elemB[0]
+ * //elemA[2]
+ * //elemC[0]
+ * //elemC[0]/elemB[1]       (this is wrong: should be //elemC[0]/elemB[0] )
+ *
+ * It also ignores namespaces, and thus treats <foo:elemA> the same as <bar:elemA>.
+ */
+
+public class XMLToMapWithXPath extends DefaultHandler {
+
+    // map of all encountered tags and their running count
+    private Map<String, Integer> tagCount;
+    // keep track of the succession of elements
+    private Stack<String> tags;
+    private  List<String> xpathArray=new ArrayList<String>();
+    private  static Map<String, String> datamapwithxpath=new HashMap<String,String>();
+    private static String currentmapkey=null;
+    static int a=0;
+    // set to the tag name of the recently closed tag
+    String lastClosedTag;
+
+    /**
+     * Construct the XPath expression
+     */
+    private String getCurrentXPath() {
+    	//for freemarker we can not put the . | + / char so it should be plain string for map key
+        String str = "";
+        boolean first = true;
+        for (String tag : tags) {
+            if (first)
+                str = str + tag;
+            else
+                str = str + "/" + tag;
+           // str += "["+tagCount.get(tag)+"]";
+            first = false;
+        }
+        
+        return str;
+    }
+
+     
+    @Override
+    public void startDocument() throws SAXException {
+        tags = new Stack();
+        //xpathArray= new Stack();
+        tagCount = new HashMap<String, Integer>();
+    }
+
+    @Override
+    public void startElement (String namespaceURI, String localName, String qName, Attributes atts)
+        throws SAXException
+    {
+        boolean isRepeatElement = false;
+   
+
+        if (tagCount.get(localName) == null) {
+            tagCount.put(localName, 0);
+        } else {
+            tagCount.put(localName, 1 + tagCount.get(localName));
+        }
+
+        if (lastClosedTag != null) {
+            // an element was recently closed ...
+            if (lastClosedTag.equals(localName)) {
+                // ... and it's the same as the current one
+                isRepeatElement = true;
+                
+               
+            } else {
+                // ... but it's different from the current one, so discard it
+                tags.pop();
+                xpathArray.remove(xpathArray.size()-1);
+            }
+        }
+
+        // if it's not the same element, add the new element and zero count to list
+        if (! isRepeatElement) {
+        	
+            tags.push(localName);
+            
+          
+        }
+        
+        xpathArray.add(localName);
+        
+               
+        currentmapkey =getCurrentXPath();
+       
+        lastClosedTag = null;
+    }
+
+    @Override
+    public void endElement (String uri, String localName, String qName) throws SAXException {
+        // if two tags are closed in succession (without an intermediate opening tag),
+        // then the information about the deeper nested one is discarded
+    	boolean popedup=false;
+        if (lastClosedTag != null) {
+            tags.pop();
+            xpathArray.remove(xpathArray.size()-1);
+        }
+        lastClosedTag = localName;
+    }
+
+    
+    public void characters(char ch[], int start, int length)
+    	    throws SAXException {
+    	String value= new String(ch, start, length);
+    	        //System.out.println("start characters : " +    	            value);
+    	        if(!datamapwithxpath.containsKey(currentmapkey) && value.trim().length()!=0)
+    	        	datamapwithxpath.put(currentmapkey, value);
+    	    } 
+
+    public Map convertXMLTOMAP() throws ParserConfigurationException, SAXException, IOException
+    {
+    	datamapwithxpath.clear();
+    	
+    	 SAXParserFactory spf = SAXParserFactory.newInstance();
+         spf.setNamespaceAware(true);
+         spf.setValidating(false);
+         spf.setXIncludeAware(true);
+
+        // Create a JAXP SAXParser
+        SAXParser saxParser = spf.newSAXParser();
+
+        // Get the encapsulated SAX XMLReader
+        XMLReader xmlReader = saxParser.getXMLReader();
+
+        // Set the ContentHandler of the XMLReader
+        xmlReader.setContentHandler(new XMLToMapWithXPath());
+
+        String filename = "C:\\logs\\XML.xml";
+        String path = new File(filename).getAbsolutePath();
+        if (File.separatorChar != '/') {
+            path = path.replace(File.separatorChar, '/');
+        }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        // Tell the XMLReader to parse the XML document
+        xmlReader.parse("file:"+path);
+        //System.out.println(new TreeSet(listofxpath));
+        //System.out.println(datamapwithxpath);
+    	
+    	
+    	return datamapwithxpath;
+    }
+    
+    
+    public static void main (String[] args) throws Exception {
+         
+    	XMLToMapWithXPath a=new XMLToMapWithXPath();
+    	System.out.println(a.convertXMLTOMAP());
+    }
+    
+    
+        
+	public static String getFileContent( FileInputStream fis ) throws IOException {
+	    StringBuilder sb = new StringBuilder();
+	    Reader r = new InputStreamReader(fis, "UTF-8");  //or whatever encoding
+	    int ch = r.read();
+	    while(ch >= 0) {
+	        sb.append((char)ch);
+	        ch = r.read();
+	    }
+	    return sb.toString();
+	}
+	
+	public static Document getDocument(String xmlStr) throws Exception {
+		InputStream is = new ByteArrayInputStream(xmlStr.getBytes());
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		DocumentBuilder docBuilder = factory.newDocumentBuilder();
+
+		// Parse the XML file and build the Document object in RAM
+		Document doc = docBuilder.parse(is);
+
+		// Normalize text representation.
+		// Collapses adjacent text nodes into one node.
+		doc.getDocumentElement().normalize();
+
+		return doc;
+	}
+
+
+}
+
+
+
+package xyz;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.Stack;
+import java.util.TreeSet;
+
+import javax.xml.parsers.*;
+
+import org.apache.commons.lang.StringUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+import org.xml.sax.*;
+import org.xml.sax.helpers.DefaultHandler;
+
+import com.sun.org.apache.xpath.internal.XPathAPI;
+
+/**
+ * SAX handler that creates and prints XPath expressions for each element encountered.
+ *
+ * The algorithm is not infallible, if elements appear on different levels in the hierarchy.
+ * Something like the following is an example:
+ * - <elemA/>
+ * - <elemA/>
+ * - <elemB/>
+ * - <elemA/>
+ * - <elemC>
+ * -     <elemB/>
+ * - </elemC>
+ *
+ * will report
+ *
+ * //elemA[0]
+ * //elemA[1]
+ * //elemB[0]
+ * //elemA[2]
+ * //elemC[0]
+ * //elemC[0]/elemB[1]       (this is wrong: should be //elemC[0]/elemB[0] )
+ *
+ * It also ignores namespaces, and thus treats <foo:elemA> the same as <bar:elemA>.
+ */
+
+public class XSDTOXPath extends DefaultHandler {
+
+    // map of all encountered tags and their running count
+    private Map<String, Integer> tagCount;
+    // keep track of the succession of elements
+    private Stack<String> tags;
+    private static List<String> xpathArray=new ArrayList<String>();
+    private static Set<String> listofxpath=new HashSet<String>();
+    // set to the tag name of the recently closed tag
+    String lastClosedTag;
+
+    /**
+     * Construct the XPath expression
+     */
+    private String getCurrentXPath() {
+        String str = "//";
+        boolean first = true;
+        for (String tag : tags) {
+            if (first)
+                str = str + tag;
+            else
+                str = str + "/" + tag;
+            str += "["+tagCount.get(tag)+"]";
+            first = false;
+        }
+        
+        return str;
+    }
+
+    private String getCurrentNamedXPath() {
+        String str = "/";
+        boolean first = true;
+        for (String tag : xpathArray) {
+            if (first)
+                str = str + tag;
+            else
+                str = str + "/" + tag;
+          //  str += "["+tagCount.get(tag)+"]";
+            first = false;
+        }
+        return str;
+    }
+    
+    @Override
+    public void startDocument() throws SAXException {
+        tags = new Stack();
+        //xpathArray= new Stack();
+        tagCount = new HashMap<String, Integer>();
+    }
+
+    @Override
+    public void startElement (String namespaceURI, String localName, String qName, Attributes atts)
+        throws SAXException
+    {
+        boolean isRepeatElement = false;
+   
+
+        if (tagCount.get(localName) == null) {
+            tagCount.put(localName, 0);
+        } else {
+            tagCount.put(localName, 1 + tagCount.get(localName));
+        }
+
+        if (lastClosedTag != null) {
+            // an element was recently closed ...
+            if (lastClosedTag.equals(localName)) {
+                // ... and it's the same as the current one
+                isRepeatElement = true;
+                
+               
+            } else {
+                // ... but it's different from the current one, so discard it
+                tags.pop();
+                
+            }
+        }
+
+        // if it's not the same element, add the new element and zero count to list
+        if (! isRepeatElement) {
+        	
+            tags.push(localName);
+            
+          
+        }
+        
+        if(localName.equalsIgnoreCase("element"))
+    	{
+         
+    		for(int i=0;i<atts.getLength();i++){
+    			if(atts.getLocalName(i).equalsIgnoreCase("name"))
+    			{
+    				String nodename=atts.getValue(i);
+    				//if(!xpathArray.contains(nodename))
+    					xpathArray.add(nodename);
+    			}
+    		}
+    	}
+        
+    
+       
+        lastClosedTag = null;
+    }
+
+    @Override
+    public void endElement (String uri, String localName, String qName) throws SAXException {
+        // if two tags are closed in succession (without an intermediate opening tag),
+        // then the information about the deeper nested one is discarded
+    	boolean popedup=false;
+        if (lastClosedTag != null) {
+            tags.pop();
+           
+        }
+        lastClosedTag = localName;
+      // System.out.println(xpathArray);
+        if(xpathArray.size()>0){
+       StringBuffer sb=new StringBuffer("/");
+	       for(String tagname:xpathArray)
+	       {
+	                 sb.append(tagname).append("/");
+	       }
+	       sb.replace(sb.lastIndexOf("/"),sb.length(), "");
+	      // System.out.println(sb);
+	       listofxpath.add(sb.toString());
+	       if(localName.equalsIgnoreCase("element"))
+	    	       xpathArray.remove(xpathArray.size()-1);
+        }
+    }
+
+    
+    public void characters(char ch[], int start, int length)
+    	    throws SAXException {
+    	    } 
+
+   public List ConvertXSDToXPATH() throws Exception
+   {
+	   
+   	// Create a JAXP SAXParserFactory and configure it
+       SAXParserFactory spf = SAXParserFactory.newInstance();
+        spf.setNamespaceAware(true);
+        spf.setValidating(false);
+        spf.setXIncludeAware(true);
+
+       // Create a JAXP SAXParser
+       SAXParser saxParser = spf.newSAXParser();
+
+       // Get the encapsulated SAX XMLReader
+       XMLReader xmlReader = saxParser.getXMLReader();
+
+       // Set the ContentHandler of the XMLReader
+       xmlReader.setContentHandler(new XSDTOXPath());
+
+       //FileInputStream fis=new FileInputStream("C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd");
+       
+       //String filename = "C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd";
+       String filename = "C:\\workspacests\\ModelJaxb\\src\\com\\bvdep\\webservices\\corteraGetReport.xsd";
+       String path = new File(filename).getAbsolutePath();
+       if (File.separatorChar != '/') {
+           path = path.replace(File.separatorChar, '/');
+       }
+       if (!path.startsWith("/")) {
+           path = "/" + path;
+       }
+
+       // Tell the XMLReader to parse the XML document
+       xmlReader.parse("file:"+path);
+       
+       TreeSet ts=new TreeSet(listofxpath);
+       List returnList=new ArrayList();
+       returnList.addAll(ts);
+       return returnList;
+	   
+	   
+   }
+    
+    
+    public static void main (String[] args) throws Exception {
+        
+    	XSDTOXPath scp=new XSDTOXPath();
+ 	    System.out.println(scp.ConvertXSDToXPATH());
+ 
+    }
+    
+    
+	public static String getFileContent( FileInputStream fis ) throws IOException {
+	    StringBuilder sb = new StringBuilder();
+	    Reader r = new InputStreamReader(fis, "UTF-8");  //or whatever encoding
+	    int ch = r.read();
+	    while(ch >= 0) {
+	        sb.append((char)ch);
+	        ch = r.read();
+	    }
+	    return sb.toString();
+	}
+	
+	public static Document getDocument(String xmlStr) throws Exception {
+		InputStream is = new ByteArrayInputStream(xmlStr.getBytes());
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		DocumentBuilder docBuilder = factory.newDocumentBuilder();
+
+		// Parse the XML file and build the Document object in RAM
+		Document doc = docBuilder.parse(is);
+
+		// Normalize text representation.
+		// Collapses adjacent text nodes into one node.
+		doc.getDocumentElement().normalize();
+
+		return doc;
+	}
+
+
+}
+
+package com.sungard.agr.getpaid.creditmanagement.util;
+
+import java.io.IOException;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.util.Map;
+
+import freemarker.cache.StringTemplateLoader;
+import freemarker.template.Configuration;
+import freemarker.template.Template;
+import freemarker.template.TemplateException;
+
+public class ApplyFreeMarkerTemplates {
+	static Configuration cfg = new Configuration();
+
+	public static String freemarkerDo(Map datamodel, String template)
+
+	{
+		Writer writer = new StringWriter();
+
+		StringTemplateLoader stringLoader = new StringTemplateLoader();
+		stringLoader.putTemplate("searchTemplate", template);
+		cfg.setTemplateLoader(stringLoader);
+		Template tpl = null;
+		try {
+			tpl = cfg.getTemplate("searchTemplate");
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		try {
+
+			tpl.process(datamodel, writer);
+
+		} catch (TemplateException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return writer.toString();
+	}
+
+}
